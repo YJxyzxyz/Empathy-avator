@@ -5,24 +5,48 @@
   <title>Empathy Avatar M1</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; margin:20px;}
-    .card{max-width:700px;border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 2px 10px rgba(0,0,0,.06)}
+    :root{--muted:#f3f4f6;--border:#e5e7eb;--text:#111827;--sub:#6b7280}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:20px;color:var(--text)}
+    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;align-items:start}
+    .card{border:1px solid var(--border);border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);background:white}
+    .card header{padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600}
+    .card .body{padding:14px}
     .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .tag{padding:4px 10px;border-radius:999px;background:#f3f4f6}
-    .reply{font-size:1.1rem;line-height:1.6;margin-top:8px}
-    small{color:#6b7280}
+    .tag{padding:4px 10px;border-radius:999px;background:var(--muted)}
+    .reply{font-size:1.05rem;line-height:1.6;margin-top:8px;min-height:1.6em}
+    small{color:var(--sub)}
+    #video{width:100%;display:block;border-radius:10px;border:1px solid var(--border);background:#000}
+    #player{width:100%}
+    .muted{opacity:.6}
+    .status{font-size:12px;color:var(--sub);margin-top:4px}
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="row">
-      <div>情绪：<strong id="emo">-</strong></div>
-      <div class="tag">置信度 <span id="conf">-</span></div>
-      <div><small>音频采样率：<span id="sr">-</span></small></div>
+  <div class="grid">
+    <!-- 左侧：视频 -->
+    <div class="card">
+      <header>摄像头</header>
+      <div class="body">
+        <img id="video" src="http://127.0.0.1:8000/video" alt="camera stream"/>
+        <div class="status">视频来自 <code>/video</code>（MJPEG）</div>
+      </div>
     </div>
-    <div class="reply" id="reply">等待连接...</div>
-    <audio id="player" controls autoplay></audio>
-    <div style="margin-top:8px;"><small>音频来自本地服务 /audio/&lt;token&gt;.wav</small></div>
+
+    <!-- 右侧：状态+音频 -->
+    <div class="card">
+      <header>状态与回复</header>
+      <div class="body">
+        <div class="row">
+          <div>情绪：<strong id="emo">-</strong></div>
+          <div class="tag">置信度 <span id="conf">-</span></div>
+          <div><small>音频采样率：<span id="sr">-</span></small></div>
+        </div>
+        <div class="reply" id="reply">等待连接...</div>
+        <audio id="player" controls autoplay></audio>
+        <div style="margin-top:8px;"><small class="muted">音频来自本地服务 <code>/audio/&lt;token&gt;.wav</code></small></div>
+        <div class="status" id="netstat"></div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -32,17 +56,21 @@
     const sr = document.getElementById("sr");
     const reply = document.getElementById("reply");
     const player = document.getElementById("player");
+    const netstat = document.getElementById("netstat");
 
     let lastWav = null;
 
-    ws.onopen = () => { reply.textContent = "已连接，正在读取摄像头..."; };
+    function setStatus(s){ netstat.textContent = s || ""; }
+
+    ws.onopen = () => { reply.textContent = "已连接，正在读取摄像头…"; setStatus("WS 已连接"); };
+
     ws.onmessage = async (ev) => {
       try{
         const js = JSON.parse(ev.data);
-        emo.textContent = js.emo;
-        conf.textContent = (js.conf || 0).toFixed(2);
-        sr.textContent = js.sr || 22050;
-        reply.textContent = js.reply || "";
+        emo.textContent  = js.emo ?? "-";
+        conf.textContent = (js.conf ?? 0).toFixed(2);
+        sr.textContent   = js.sr ?? 22050;
+        reply.textContent= js.reply || "";
 
         if(js.wav && js.wav !== lastWav){
           lastWav = js.wav;
@@ -51,13 +79,22 @@
           if(res.ok){
             const blob = await res.blob();
             const objUrl = URL.createObjectURL(blob);
+            // 防止叠音：切源前先暂停并复位
+            try{ player.pause(); }catch{}
+            player.currentTime = 0;
             player.src = objUrl;
-            // 不想累积URL对象可在下一次播放前 URL.revokeObjectURL(prevUrl)
+            await player.play().catch(()=>{ /* 某些浏览器需用户交互后自动播放才生效 */ });
+          }else{
+            setStatus("已连接，但 /audio 返回状态 "+res.status);
           }
         }
-      }catch(e){}
+      }catch(e){
+        console.error(e);
+      }
     };
-    ws.onclose = () => { reply.textContent = "连接已关闭"; };
+
+    ws.onerror = (e) => { console.error("[WS error]", e); setStatus("WS 连接错误"); };
+    ws.onclose = () => { reply.textContent = "连接已关闭"; setStatus("WS 已关闭"); };
   </script>
 </body>
 </html>

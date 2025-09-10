@@ -60,3 +60,24 @@ pip install onnx onnxruntime  # gpu or cpu version
 pip install piper-tts
 ```
 
+
+
+## M1 1.1
+
+#### ·修复bug:
+
+避免每一帧都触发 **TTS**导致后台不断下载音频 
+
+解决Windows 句柄占用问题，避免文件同时占用
+
+修改嘴型能量计算方式，进行安全裁剪
+
+添加audio自动清理，防止内存爆炸
+
+#### ·新功能:
+
+对 FER 输出做多数投票平滑（最近 8 帧大多数一致才认为“状态稳定”）。只在稳定情绪改变时更新 reply。
+
+TTS 双阈值：文本必须变化 且 距上次合成超过 tts_min_interval 才合成；否则复用上次音频
+
+添加视频流输出以及bbox绘制

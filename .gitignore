@@ -5,3 +5,4 @@ __pycache__/
 ./idea/
 /data/processed
 /data/raw
+/tmp_audio
