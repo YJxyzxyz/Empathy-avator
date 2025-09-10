@@ -1,0 +1,7 @@
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+./idea/
+/data/processed
+/data/raw

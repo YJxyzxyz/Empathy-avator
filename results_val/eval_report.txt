@@ -1,0 +1,27 @@
+Dataset: data/processed/FER2013_Images/val
+Accuracy: 69.94%
+AvgLoss: 1.2316
+
+Classification Report:
+              precision    recall  f1-score   support
+
+       angry     0.6346    0.6210    0.6277       467
+     disgust     0.8293    0.6071    0.7010        56
+        fear     0.5866    0.5121    0.5468       496
+       happy     0.8798    0.8749    0.8773       895
+         sad     0.6536    0.6310    0.6421       607
+    surprise     0.5519    0.6355    0.5907       653
+     neutral     0.8163    0.8458    0.8308       415
+
+    accuracy                         0.6994      3589
+   macro avg     0.7074    0.6753    0.6881      3589
+weighted avg     0.7013    0.6994    0.6991      3589
+
+Confusion Matrix:
+[[290   3  40  21  28  74  11]
+ [ 12  34   2   3   0   5   0]
+ [ 49   1 254  10  35 108  39]
+ [ 14   1  11 783  48  22  16]
+ [ 33   1  30  38 383 120   2]
+ [ 55   1  63  24  84 415  11]
+ [  4   0  33  11   8   8 351]]
