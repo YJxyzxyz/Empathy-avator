@@ -1,0 +1,6 @@
+fer_onnx: models/fer/weights/fer_mbv3.onnx
+piper_exe: tts/piper.exe
+piper_voice: tts/voices/zh_cn_voice.onnx
+audio_tmp_dir: tmp_audio
+img_size: 224
+classes: [angry, disgust, fear, happy, sad, surprise, neutral]
