@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 import numpy as np
 
-def viseme_from_audio(samples: np.ndarray, sr: int, fps: int = 25, eps: float = 1e-8):
+DEFAULT_FPS = 25
+
+
+def viseme_from_audio(samples: np.ndarray, sr: int, fps: int = DEFAULT_FPS, eps: float = 1e-8):
     if samples is None or len(samples) == 0:
-        return []
+        return {"fps": fps, "weights": [], "duration": 0.0}
     # 统一到 float32，范围 [-1,1]
     if samples.dtype == np.int16:
         x = samples.astype(np.float32) / 32768.0
@@ -26,4 +29,6 @@ def viseme_from_audio(samples: np.ndarray, sr: int, fps: int = 25, eps: float = 
     e -= e.min()
     if e.max() > eps:
         e /= (e.max() + eps)
-    return e.tolist()
+
+    duration = float(len(e) / float(fps or DEFAULT_FPS))
+    return {"fps": int(fps), "weights": e.tolist(), "duration": duration}
