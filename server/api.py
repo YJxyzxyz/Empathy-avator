@@ -8,14 +8,20 @@ import numpy as np
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from server.pipeline import Pipeline
+from server.audio import SystemAudioStream
 
 # ====== 路径按需调整 ======
 FER_ONNX    = "models/fer/weights/fer_mbv3.onnx"     # 你的 FER ONNX
 PIPER_EXE   = "tts/piper.exe"
 PIPER_VOICE = "tts/voices/zh_cn_voice.onnx"
 AUDIO_TMP   = "tmp_audio"                             # wav 输出目录
+
+# 音频采集配置
+AUDIO_SAMPLE_RATE = 16000
+AUDIO_CHUNK_MS = 480
 
 # 采集参数
 TARGET_W, TARGET_H = 640, 480
@@ -38,7 +44,15 @@ pipe = Pipeline(
     piper_voice=PIPER_VOICE,
     audio_tmp_dir=AUDIO_TMP,
     tts_min_interval_sec=2.0,   # TTS 触发间隔（秒）
+    ser_sample_rate=AUDIO_SAMPLE_RATE,
 )
+
+_audio_candidate = SystemAudioStream(
+    sample_rate=AUDIO_SAMPLE_RATE,
+    channels=1,
+    chunk_ms=AUDIO_CHUNK_MS,
+)
+AUDIO_STREAM = _audio_candidate if _audio_candidate.available else None
 
 # ====== 全局：摄像头与最新帧缓存 ======
 CAP = None
@@ -55,6 +69,11 @@ LAST_OVERLAY: Dict[str, Any] = {
     "ts": 0.0            # 更新时间戳
 }
 OVERLAY_TTL = 0.6  # 秒；超过不再绘制（避免“拖影”）
+
+# 文本输入缓存
+USER_TEXT_LOCK = asyncio.Lock()
+LATEST_USER_TEXT: str = ""
+LATEST_USER_TEXT_TS: float = 0.0
 
 # ================= 帮助函数 =================
 
@@ -196,6 +215,18 @@ async def on_startup():
     globals()['CAP_TASK'] = asyncio.create_task(_capture_loop())
     log.info("[Startup] capture loop started")
 
+    if AUDIO_STREAM is not None:
+        try:
+            if AUDIO_STREAM.start():
+                log.info("[Startup] audio stream started at %s Hz", AUDIO_SAMPLE_RATE)
+            else:
+                log.warning("[Startup] audio stream already running or unavailable")
+        except Exception:
+            log.exception("[Startup] failed to start audio stream")
+    else:
+        log.warning("[Startup] audio capture unavailable (sounddevice missing?)")
+
+
 @app.on_event("shutdown")
 async def on_shutdown():
     cap_task = globals().get('CAP_TASK', None)
@@ -208,12 +239,25 @@ async def on_shutdown():
         globals()['CAP_TASK'] = None
         log.info("[Shutdown] capture loop stopped")
 
+    if AUDIO_STREAM is not None:
+        try:
+            AUDIO_STREAM.stop()
+            log.info("[Shutdown] audio stream stopped")
+        except Exception:
+            log.exception("[Shutdown] failed to stop audio stream")
+
 # ================= 健康检查 & 静态资源 =================
 
 @app.get("/health")
 def health():
     tmp = Path(AUDIO_TMP)
     n_wav = len(list(tmp.glob("*.wav"))) if tmp.exists() else 0
+    audio_ready = False
+    if AUDIO_STREAM is not None:
+        try:
+            audio_ready = AUDIO_STREAM.peek_latest() is not None
+        except Exception:
+            audio_ready = False
     return {
         "ok": os.path.exists(FER_ONNX) and os.path.exists(PIPER_EXE),
         "fer": FER_ONNX,
@@ -221,7 +265,10 @@ def health():
         "wav_files": n_wav,
         "video_size": [TARGET_W, TARGET_H],
         "fps_target": TARGET_FPS,
-        "camera_opened": CAP is not None
+        "camera_opened": CAP is not None,
+        "audio_stream": AUDIO_STREAM is not None,
+        "audio_has_buffer": audio_ready,
+        "audio_sample_rate": AUDIO_SAMPLE_RATE,
     }
 
 @app.get("/audio/{fname}")
@@ -230,6 +277,26 @@ def get_audio(fname: str):
     if not fp.exists():
         return PlainTextResponse("Not Found", status_code=404)
     return FileResponse(str(fp), media_type="audio/wav")
+
+
+class TextPayload(BaseModel):
+    text: str = ""
+
+
+@app.post("/user-text")
+async def set_user_text(payload: TextPayload):
+    global LATEST_USER_TEXT, LATEST_USER_TEXT_TS
+    txt = payload.text or ""
+    async with USER_TEXT_LOCK:
+        LATEST_USER_TEXT = txt
+        LATEST_USER_TEXT_TS = time.time()
+    return {"ok": True, "text": txt, "ts": LATEST_USER_TEXT_TS}
+
+
+@app.get("/user-text")
+async def get_user_text():
+    async with USER_TEXT_LOCK:
+        return {"text": LATEST_USER_TEXT, "ts": LATEST_USER_TEXT_TS}
 
 # 单帧调试（会叠加 bbox/情绪）
 @app.get("/frame")
@@ -326,7 +393,22 @@ async def ws_endpoint(ws: WebSocket):
                 })
                 continue
 
-            result = pipe.step(frame, user_text="")
+            audio_chunk = None
+            if AUDIO_STREAM is not None:
+                try:
+                    audio_chunk = AUDIO_STREAM.pop_latest()
+                except Exception:
+                    audio_chunk = None
+
+            async with USER_TEXT_LOCK:
+                user_text = LATEST_USER_TEXT
+
+            result = pipe.step(
+                frame,
+                audio_chunk=audio_chunk,
+                audio_sr=AUDIO_SAMPLE_RATE,
+                user_text=user_text,
+            )
 
             # 更新叠加信息（bbox/emo/conf），供 /video 使用
             try:
@@ -345,6 +427,9 @@ async def ws_endpoint(ws: WebSocket):
                 "wav": result["wav"],
                 "sr": result["sr"],
                 "conf": result["conf"],
+                "modalities": result.get("modalities"),
+                "fusion": result.get("fusion"),
+                "user_text": user_text,
                 # "bbox": result.get("bbox"),      # 如前端要自己画框，可打开
                 # "visemes": result.get("visemes"),
             })

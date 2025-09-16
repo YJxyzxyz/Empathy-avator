@@ -1,15 +1,19 @@
 # server/pipeline.py
 # -*- coding: utf-8 -*-
-from typing import Optional, Dict, Any, Tuple, List
+from typing import Optional, Dict, Any, Tuple, List, Mapping
 import time, uuid, wave, os, collections
 import numpy as np
 
 from models.fer.infer import FER
+from models.ser import StreamingSER
+from models.text import TextEmotion
+from models.fusion import RuleFusion
 from dialog.policy import make_reply, argmax_label
 from tts.synth import PiperTTS
 from avatar.driver import viseme_from_audio
 
-CLASSES = ('angry','disgust','fear','happy','sad','surprise','neutral')
+CLASSES = ("angry","disgust","fear","happy","sad","surprise","neutral")
+
 
 def _write_wav_int16(path: str, pcm: np.ndarray, sr: int):
     with wave.open(path, "wb") as wf:
@@ -20,22 +24,35 @@ def _write_wav_int16(path: str, pcm: np.ndarray, sr: int):
             pcm = pcm.astype(np.int16, copy=False)
         wf.writeframes(pcm.tobytes())
 
+
 class Pipeline:
     """
-    M1：FER -> 策略 -> 单次TTS（PCM）-> 本地写wav
-    加入：
-      - 情绪平滑（多数投票）
-      - 仅在“稳定情绪改变”时更新 reply
-      - TTS 双阈值：reply 变化 且 超过最小间隔 才合成
+    M2：FER + SER + 文本情感 + 规则式融合 + TTS/Avatar
+
+    功能：
+      - 视觉：FER（带多数投票平滑）
+      - 音频：StreamingSER（RMS/ZCR/频谱质心启发式）
+      - 文本：关键词情感识别，附带风险词提醒
+      - 融合：按置信度门控的加权融合
+      - 回复：稳定情绪变化时触发策略与 TTS
     """
-    def __init__(self,
-                 fer_onnx: str,
-                 piper_exe: str,
-                 piper_voice: str,
-                 audio_tmp_dir: str = "tmp_audio",
-                 tts_min_interval_sec: float = 2.0,
-                 smooth_window: int = 8):
+
+    def __init__(
+        self,
+        fer_onnx: str,
+        piper_exe: str,
+        piper_voice: str,
+        audio_tmp_dir: str = "tmp_audio",
+        tts_min_interval_sec: float = 2.0,
+        smooth_window: int = 8,
+        ser_sample_rate: int = 16000,
+        ser_window: float = 1.2,
+        fusion_weights: Optional[Mapping[str, float]] = None,
+    ):
         self.fer = FER(fer_onnx, input_size=(224, 224), classes=CLASSES)
+        self.ser = StreamingSER(sample_rate=ser_sample_rate, window_seconds=ser_window, classes=CLASSES)
+        self.text_emotion = TextEmotion(classes=CLASSES)
+        self.fusion = RuleFusion(classes=CLASSES, base_weights=fusion_weights)
         self.tts = PiperTTS(piper_exe=piper_exe, voice_path=piper_voice, out_dir=audio_tmp_dir)
 
         # 情绪平滑
@@ -76,21 +93,68 @@ class Pipeline:
         self.last_tts_ts = time.time()
         return wav_file, sr, vis
 
-    # ---------- 主流程 ----------
-
-    def step(self, frame_bgr: np.ndarray, user_text: Optional[str] = "") -> Dict[str, Any]:
-        # 1) FER
+    def _vision_branch(self, frame_bgr: np.ndarray) -> Dict[str, Any]:
         emo_out = self.fer.infer(frame_bgr)  # {'probs','conf','bbox'}
         probs = np.asarray(emo_out.get("probs", np.zeros(len(CLASSES), dtype=np.float32)))
         conf  = float(emo_out.get("conf", np.max(probs) if probs.size else 0.0))
         bbox  = emo_out.get("bbox", None)
         curr_emo = argmax_label(probs, CLASSES) if probs.size else "neutral"
+        return {
+            "probs": probs.tolist(),
+            "conf": conf,
+            "bbox": bbox,
+            "emo": curr_emo,
+        }
 
-        # 2) 情绪平滑（更新历史，求多数）
-        self.emo_hist.append(curr_emo)
-        maj = self._majority(list(self.emo_hist))
-        if maj is None:
-            maj = curr_emo
+    def _audio_branch(self, audio_chunk: Optional[np.ndarray], audio_sr: Optional[int]) -> Dict[str, Any]:
+        try:
+            ser_out = self.ser.process(audio_chunk, audio_sr)
+        except Exception:
+            ser_out = {"probs": None, "conf": None, "features": None}
+        else:
+            probs = np.asarray(ser_out.get("probs", np.zeros(len(CLASSES), dtype=np.float32)))
+            top = int(np.argmax(probs)) if probs.size else len(CLASSES) - 1
+            ser_out = {
+                **ser_out,
+                "emo": CLASSES[top],
+            }
+        return ser_out
+
+    def _text_branch(self, user_text: Optional[str]) -> Dict[str, Any]:
+        text_out = self.text_emotion.analyse(user_text or "")
+        probs = np.asarray(text_out.get("probs", np.zeros(len(CLASSES), dtype=np.float32)))
+        top = int(np.argmax(probs)) if probs.size else len(CLASSES) - 1
+        text_out = {
+            **text_out,
+            "emo": CLASSES[top],
+        }
+        return text_out
+
+    # ---------- 主流程 ----------
+
+    def step(
+        self,
+        frame_bgr: np.ndarray,
+        audio_chunk: Optional[np.ndarray] = None,
+        audio_sr: Optional[int] = None,
+        user_text: Optional[str] = "",
+    ) -> Dict[str, Any]:
+        # 1) 各模态结果
+        vision = self._vision_branch(frame_bgr)
+        audio = self._audio_branch(audio_chunk, audio_sr)
+        text = self._text_branch(user_text)
+
+        # 2) 情绪平滑基于融合后的标签
+        modalities = {
+            "vision": {"probs": vision.get("probs"), "conf": vision.get("conf")},
+            "audio": audio,
+            "text": text,
+        }
+        fusion = self.fusion.fuse(modalities)
+        fused_label = fusion["emo"]
+        fused_conf = fusion["conf"]
+        self.emo_hist.append(fused_label)
+        maj = self._majority(list(self.emo_hist)) or fused_label
 
         # 3) 仅当“稳定情绪”发生改变时，才更新 reply
         need_new_reply = (self.stable_emo != maj)
@@ -112,10 +176,16 @@ class Pipeline:
         # 5) 返回
         return {
             "emo": maj,           # 平滑后的稳定情绪
-            "conf": conf,
+            "conf": fused_conf,
             "reply": reply,
             "wav": wav_file,
             "sr": sr,
-            "bbox": bbox,
+            "bbox": vision.get("bbox"),
             "visemes": vis,
+            "modalities": {
+                "vision": vision,
+                "audio": audio,
+                "text": {**text, "text": user_text or ""},
+            },
+            "fusion": fusion,
         }

@@ -2,49 +2,96 @@
 <html lang="zh">
 <head>
   <meta charset="utf-8" />
-  <title>Empathy Avatar M1</title>
+  <title>Empathy Avatar M2</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root{--muted:#f3f4f6;--border:#e5e7eb;--text:#111827;--sub:#6b7280}
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:20px;color:var(--text)}
-    .grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;align-items:start}
+    :root{--muted:#f3f4f6;--border:#e5e7eb;--text:#111827;--sub:#6b7280;--accent:#2563eb}
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:20px;color:var(--text);background:#fafafa}
+    .grid{display:grid;grid-template-columns:minmax(320px,1.2fr) minmax(280px,.8fr);gap:16px;align-items:start}
+    @media(max-width:960px){.grid{grid-template-columns:1fr}}
     .card{border:1px solid var(--border);border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);background:white}
-    .card header{padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600}
+    .card header{padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600;display:flex;align-items:center;justify-content:space-between}
     .card .body{padding:14px}
     .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
     .tag{padding:4px 10px;border-radius:999px;background:var(--muted)}
     .reply{font-size:1.05rem;line-height:1.6;margin-top:8px;min-height:1.6em}
     small{color:var(--sub)}
     #video{width:100%;display:block;border-radius:10px;border:1px solid var(--border);background:#000}
-    #player{width:100%}
-    .muted{opacity:.6}
-    .status{font-size:12px;color:var(--sub);margin-top:4px}
+    #player{width:100%;margin-top:8px}
+    .muted{opacity:.7}
+    .status{font-size:12px;color:var(--sub);margin-top:4px;min-height:1.2em}
+    .mode-list{display:flex;flex-direction:column;gap:10px}
+    .mode-item{background:var(--muted);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
+    .mode-item strong{font-size:1rem}
+    .mode-detail{color:var(--sub);font-size:13px}
+    .weights{font-size:13px;color:var(--sub);margin-top:8px}
+    textarea{width:100%;min-height:110px;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font:inherit;resize:vertical;background:#fff}
+    button{border:none;border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer;background:var(--accent);color:#fff;transition:background .2s}
+    button.secondary{background:#6b7280}
+    button:disabled{opacity:.6;cursor:not-allowed}
+    .risk{color:#dc2626;font-weight:600}
   </style>
 </head>
 <body>
   <div class="grid">
-    <!-- 左侧：视频 -->
     <div class="card">
       <header>摄像头</header>
       <div class="body">
-        <img id="video" src="http://127.0.0.1:8000/video" alt="camera stream"/>
+        <img id="video" src="http://127.0.0.1:8000/video" alt="camera stream" />
         <div class="status">视频来自 <code>/video</code>（MJPEG）</div>
       </div>
     </div>
 
-    <!-- 右侧：状态+音频 -->
     <div class="card">
       <header>状态与回复</header>
       <div class="body">
         <div class="row">
-          <div>情绪：<strong id="emo">-</strong></div>
+          <div>融合情绪：<strong id="emo">-</strong></div>
           <div class="tag">置信度 <span id="conf">-</span></div>
-          <div><small>音频采样率：<span id="sr">-</span></small></div>
+          <div><small>输出采样率：<span id="sr">-</span></small></div>
         </div>
         <div class="reply" id="reply">等待连接...</div>
         <audio id="player" controls autoplay></audio>
-        <div style="margin-top:8px;"><small class="muted">音频来自本地服务 <code>/audio/&lt;token&gt;.wav</code></small></div>
         <div class="status" id="netstat"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header>多模态分析 <small id="fusionLabel" class="muted"></small></header>
+      <div class="body">
+        <div class="mode-list">
+          <div class="mode-item">
+            <div>
+              <strong>视觉 (FER)</strong>
+              <div class="mode-detail" id="visionStatus">等待...</div>
+            </div>
+          </div>
+          <div class="mode-item">
+            <div>
+              <strong>语音 (SER)</strong>
+              <div class="mode-detail" id="audioStatus">等待音频...</div>
+            </div>
+          </div>
+          <div class="mode-item">
+            <div>
+              <strong>文本</strong>
+              <div class="mode-detail" id="textStatusLine">尚未输入文本</div>
+            </div>
+          </div>
+        </div>
+        <div class="weights" id="fusionWeights">融合权重：-</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header>输入与调节</header>
+      <div class="body">
+        <textarea id="userText" placeholder="在这里输入你想表达的话语，点击发送后将参与情绪融合..."></textarea>
+        <div class="row" style="margin-top:8px;justify-content:flex-end">
+          <button type="button" class="secondary" id="clearText">清空</button>
+          <button type="button" id="sendText">发送文本</button>
+        </div>
+        <div class="status" id="textStatus"></div>
       </div>
     </div>
   </div>
@@ -57,10 +104,57 @@
     const reply = document.getElementById("reply");
     const player = document.getElementById("player");
     const netstat = document.getElementById("netstat");
+    const visionStatus = document.getElementById("visionStatus");
+    const audioStatus = document.getElementById("audioStatus");
+    const textStatusLine = document.getElementById("textStatusLine");
+    const fusionWeights = document.getElementById("fusionWeights");
+    const fusionLabel = document.getElementById("fusionLabel");
+    const userText = document.getElementById("userText");
+    const sendTextBtn = document.getElementById("sendText");
+    const clearTextBtn = document.getElementById("clearText");
+    const textStatus = document.getElementById("textStatus");
 
     let lastWav = null;
+    let textDirty = false;
 
     function setStatus(s){ netstat.textContent = s || ""; }
+
+    function fmtConf(val){
+      if(val === null || val === undefined || Number.isNaN(val)) return "-";
+      return (Number(val) * 100).toFixed(0) + "%";
+    }
+
+    function updateVision(mod){
+      if(!mod){ visionStatus.textContent = "无视觉数据"; return; }
+      const detail = `${mod.emo ?? "-"} · 置信度 ${fmtConf(mod.conf)}`;
+      visionStatus.textContent = detail;
+    }
+
+    function updateAudio(mod){
+      if(!mod || !mod.probs){ audioStatus.textContent = "等待音频数据"; return; }
+      const feats = mod.features || {};
+      const part = [];
+      if(feats.rms !== undefined) part.push(`rms ${Number(feats.rms).toFixed(2)}`);
+      if(feats.zcr !== undefined) part.push(`zcr ${Number(feats.zcr).toFixed(2)}`);
+      if(feats.centroid !== undefined) part.push(`centroid ${Math.round(Number(feats.centroid))}`);
+      const featureText = part.length ? part.join(" · ") : "特征不足";
+      audioStatus.textContent = `${mod.emo ?? "-"} · ${featureText}`;
+    }
+
+    function updateTextMod(mod){
+      if(!mod || !mod.probs){ textStatusLine.textContent = "尚未输入文本"; return; }
+      const matched = mod.matched ? Object.entries(mod.matched).filter(([,v])=>v>0).map(([k,v])=>`${k}:${v}`).join("，") : "";
+      const base = `${mod.emo ?? "-"} · 置信度 ${fmtConf(mod.conf)}`;
+      const risk = mod.risk ? " ⚠️风险词" : "";
+      textStatusLine.textContent = matched ? `${base} · 关键词 ${matched}${risk}` : `${base}${risk}`;
+    }
+
+    function updateFusionInfo(fusion){
+      if(!fusion){ fusionWeights.textContent = "融合权重：-"; fusionLabel.textContent = ""; return; }
+      const weights = fusion.weights ? Object.entries(fusion.weights).map(([k,v])=>`${k}:${Number(v).toFixed(2)}`).join("， ") : "-";
+      fusionWeights.textContent = `融合权重：${weights}`;
+      fusionLabel.textContent = fusion.emo ? `当前融合：${fusion.emo} (${fmtConf(fusion.conf)})` : "";
+    }
 
     ws.onopen = () => { reply.textContent = "已连接，正在读取摄像头…"; setStatus("WS 已连接"); };
 
@@ -72,6 +166,15 @@
         sr.textContent   = js.sr ?? 22050;
         reply.textContent= js.reply || "";
 
+        updateVision(js.modalities?.vision);
+        updateAudio(js.modalities?.audio);
+        updateTextMod(js.modalities?.text);
+        updateFusionInfo(js.fusion);
+
+        if(!textDirty && typeof js.user_text === "string"){
+          userText.value = js.user_text;
+        }
+
         if(js.wav && js.wav !== lastWav){
           lastWav = js.wav;
           const url = `http://127.0.0.1:8000/audio/${js.wav}`;
@@ -79,11 +182,10 @@
           if(res.ok){
             const blob = await res.blob();
             const objUrl = URL.createObjectURL(blob);
-            // 防止叠音：切源前先暂停并复位
             try{ player.pause(); }catch{}
             player.currentTime = 0;
             player.src = objUrl;
-            await player.play().catch(()=>{ /* 某些浏览器需用户交互后自动播放才生效 */ });
+            await player.play().catch(()=>{});
           }else{
             setStatus("已连接，但 /audio 返回状态 "+res.status);
           }
@@ -95,6 +197,45 @@
 
     ws.onerror = (e) => { console.error("[WS error]", e); setStatus("WS 连接错误"); };
     ws.onclose = () => { reply.textContent = "连接已关闭"; setStatus("WS 已关闭"); };
+
+    async function pushText(text){
+      try{
+        const res = await fetch("http://127.0.0.1:8000/user-text",{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({text})
+        });
+        if(res.ok){
+          textStatus.textContent = text ? "文本已发送" : "文本已清空";
+          textDirty = false;
+        }else{
+          textStatus.textContent = "提交失败:"+res.status;
+        }
+      }catch(err){
+        console.error(err);
+        textStatus.textContent = "提交失败";
+      }
+    }
+
+    sendTextBtn.addEventListener("click",()=>pushText(userText.value));
+    clearTextBtn.addEventListener("click",()=>{userText.value=""; pushText("");});
+    userText.addEventListener("input",()=>{textDirty = true; textStatus.textContent = "";});
+
+    async function syncInitialText(){
+      try{
+        const res = await fetch("http://127.0.0.1:8000/user-text");
+        if(res.ok){
+          const data = await res.json();
+          if(!textDirty){
+            userText.value = data.text ?? "";
+          }
+        }
+      }catch(err){
+        console.warn("无法获取初始文本", err);
+      }
+    }
+
+    syncInitialText();
   </script>
 </body>
 </html>
