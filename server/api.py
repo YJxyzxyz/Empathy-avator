@@ -10,23 +10,27 @@ from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from server.config import AppConfig, load_config
 from server.pipeline import Pipeline
 from server.audio import SystemAudioStream
 
-# ====== 路径按需调整 ======
-FER_ONNX    = "models/fer/weights/fer_mbv3.onnx"     # 你的 FER ONNX
-PIPER_EXE   = "tts/piper.exe"
-PIPER_VOICE = "tts/voices/zh_cn_voice.onnx"
-AUDIO_TMP   = "tmp_audio"                             # wav 输出目录
+# ====== 配置 ======
+CONFIG: AppConfig = load_config()
+CONFIG.ensure_directories()
+
+FER_ONNX    = str(CONFIG.fer_onnx)
+PIPER_EXE   = str(CONFIG.piper_exe)
+PIPER_VOICE = str(CONFIG.piper_voice)
+AUDIO_TMP   = CONFIG.audio_tmp_dir
 
 # 音频采集配置
-AUDIO_SAMPLE_RATE = 16000
-AUDIO_CHUNK_MS = 480
+AUDIO_SAMPLE_RATE = CONFIG.audio_sample_rate
+AUDIO_CHUNK_MS = CONFIG.audio_chunk_ms
 
 # 采集参数
-TARGET_W, TARGET_H = 640, 480
-TARGET_FPS = 15
-CAM_INDEX_CANDIDATES = [0, 1, 2]  # 若 0 不行，自动尝试 1/2
+TARGET_W, TARGET_H = CONFIG.camera_width, CONFIG.camera_height
+TARGET_FPS = CONFIG.camera_fps
+CAM_INDEX_CANDIDATES = list(CONFIG.camera_indices or (0,))  # 若 0 不行，自动尝试其它编号
 
 # ====== FastAPI & 日志 ======
 app = FastAPI(title="Empathy Avatar M3 (Local Offline)")
@@ -36,14 +40,15 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"]
 )
 log = logging.getLogger("uvicorn.error")
+log.info("[Config] loaded: %s", CONFIG.to_dict())
 
 # ====== 初始化管线 ======
 pipe = Pipeline(
     fer_onnx=FER_ONNX,
     piper_exe=PIPER_EXE,
     piper_voice=PIPER_VOICE,
-    audio_tmp_dir=AUDIO_TMP,
-    tts_min_interval_sec=2.0,   # TTS 触发间隔（秒）
+    audio_tmp_dir=str(AUDIO_TMP),
+    tts_min_interval_sec=CONFIG.tts_min_interval,
     ser_sample_rate=AUDIO_SAMPLE_RATE,
 )
 
@@ -78,23 +83,33 @@ LATEST_USER_TEXT_TS: float = 0.0
 # ================= 帮助函数 =================
 
 def _open_capture() -> Optional[cv2.VideoCapture]:
-    for idx in CAM_INDEX_CANDIDATES:
-        cap = cv2.VideoCapture(idx, cv2.CAP_DSHOW)
+    indices = CAM_INDEX_CANDIDATES or [0]
+    backend = cv2.CAP_DSHOW if os.name == "nt" else cv2.CAP_ANY
+    for idx in indices:
+        cap = cv2.VideoCapture(idx, backend)
         if not cap or not cap.isOpened():
-            if cap: cap.release()
-            continue
+            if cap:
+                cap.release()
+            # 回退到默认后端
+            cap = cv2.VideoCapture(idx)
+            if not cap or not cap.isOpened():
+                if cap:
+                    cap.release()
+                continue
 
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH,  TARGET_W)
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, TARGET_W)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, TARGET_H)
-        cap.set(cv2.CAP_PROP_FPS,          TARGET_FPS)
+        cap.set(cv2.CAP_PROP_FPS, TARGET_FPS)
 
         ok, frame = cap.read()
         if ok and frame is not None:
-            log.info(f"[Camera] opened at index {idx} ({frame.shape[1]}x{frame.shape[0]})")
+            log.info(
+                "[Camera] opened at index %s (%sx%s)", idx, frame.shape[1], frame.shape[0]
+            )
             return cap
 
         cap.release()
-    log.error("[Camera] failed to open any camera device (tried %s)", CAM_INDEX_CANDIDATES)
+    log.error("[Camera] failed to open any camera device (tried %s)", indices)
     return None
 
 def _normalize_bbox_to_xyxy(frame_shape, bbox):
@@ -209,11 +224,11 @@ async def _capture_loop():
 @app.on_event("startup")
 async def on_startup():
     global CAP_TASK
-    if 'CAP_TASK' in globals() and globals().get('CAP_TASK') is None:
-        pass
-    # 启动采集
-    globals()['CAP_TASK'] = asyncio.create_task(_capture_loop())
-    log.info("[Startup] capture loop started")
+    if CAP_TASK is None or CAP_TASK.done():
+        CAP_TASK = asyncio.create_task(_capture_loop())
+        log.info("[Startup] capture loop started")
+    else:
+        log.info("[Startup] capture loop already running")
 
     if AUDIO_STREAM is not None:
         try:
@@ -229,14 +244,14 @@ async def on_startup():
 
 @app.on_event("shutdown")
 async def on_shutdown():
-    cap_task = globals().get('CAP_TASK', None)
-    if cap_task is not None:
-        cap_task.cancel()
+    global CAP_TASK
+    if CAP_TASK is not None:
+        CAP_TASK.cancel()
         try:
-            await cap_task
+            await CAP_TASK
         except Exception:
             pass
-        globals()['CAP_TASK'] = None
+        CAP_TASK = None
         log.info("[Shutdown] capture loop stopped")
 
     if AUDIO_STREAM is not None:
@@ -250,7 +265,7 @@ async def on_shutdown():
 
 @app.get("/health")
 def health():
-    tmp = Path(AUDIO_TMP)
+    tmp = AUDIO_TMP
     n_wav = len(list(tmp.glob("*.wav"))) if tmp.exists() else 0
     audio_ready = False
     if AUDIO_STREAM is not None:
@@ -258,10 +273,14 @@ def health():
             audio_ready = AUDIO_STREAM.peek_latest() is not None
         except Exception:
             audio_ready = False
+    fer_exists = Path(FER_ONNX).exists()
+    piper_exists = Path(PIPER_EXE).exists()
+    voice_exists = Path(PIPER_VOICE).exists()
     return {
-        "ok": os.path.exists(FER_ONNX) and os.path.exists(PIPER_EXE),
+        "ok": fer_exists and piper_exists and voice_exists,
         "fer": FER_ONNX,
-        "piper": os.path.exists(PIPER_EXE),
+        "piper": piper_exists,
+        "piper_voice": voice_exists,
         "wav_files": n_wav,
         "video_size": [TARGET_W, TARGET_H],
         "fps_target": TARGET_FPS,
@@ -269,11 +288,18 @@ def health():
         "audio_stream": AUDIO_STREAM is not None,
         "audio_has_buffer": audio_ready,
         "audio_sample_rate": AUDIO_SAMPLE_RATE,
+        "audio_chunk_ms": AUDIO_CHUNK_MS,
+        "config": CONFIG.to_dict(),
     }
+
+
+@app.get("/config")
+def get_config():
+    return CONFIG.to_dict()
 
 @app.get("/audio/{fname}")
 def get_audio(fname: str):
-    fp = Path(AUDIO_TMP) / fname
+    fp = AUDIO_TMP / fname
     if not fp.exists():
         return PlainTextResponse("Not Found", status_code=404)
     return FileResponse(str(fp), media_type="audio/wav")
