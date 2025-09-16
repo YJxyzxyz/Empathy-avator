@@ -29,7 +29,7 @@ TARGET_FPS = 15
 CAM_INDEX_CANDIDATES = [0, 1, 2]  # 若 0 不行，自动尝试 1/2
 
 # ====== FastAPI & 日志 ======
-app = FastAPI(title="Empathy Avatar M1 (Local Offline)")
+app = FastAPI(title="Empathy Avatar M3 (Local Offline)")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,
@@ -400,14 +400,17 @@ async def ws_endpoint(ws: WebSocket):
                 except Exception:
                     audio_chunk = None
 
+            user_text_ts = 0.0
             async with USER_TEXT_LOCK:
                 user_text = LATEST_USER_TEXT
+                user_text_ts = LATEST_USER_TEXT_TS
 
             result = pipe.step(
                 frame,
                 audio_chunk=audio_chunk,
                 audio_sr=AUDIO_SAMPLE_RATE,
                 user_text=user_text,
+                user_text_ts=user_text_ts,
             )
 
             # 更新叠加信息（bbox/emo/conf），供 /video 使用
@@ -430,8 +433,9 @@ async def ws_endpoint(ws: WebSocket):
                 "modalities": result.get("modalities"),
                 "fusion": result.get("fusion"),
                 "user_text": user_text,
-                # "bbox": result.get("bbox"),      # 如前端要自己画框，可打开
-                # "visemes": result.get("visemes"),
+                "dialog": result.get("dialog"),
+                "turn_id": result.get("turn_id"),
+                "visemes": result.get("visemes"),
             })
 
             await asyncio.sleep(0.06)  # ~16 FPS

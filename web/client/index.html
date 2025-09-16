@@ -2,24 +2,26 @@
 <html lang="zh">
 <head>
   <meta charset="utf-8" />
-  <title>Empathy Avatar M2</title>
+  <title>Empathy Avatar M3</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
-    :root{--muted:#f3f4f6;--border:#e5e7eb;--text:#111827;--sub:#6b7280;--accent:#2563eb}
+    :root{--muted:#f3f4f6;--border:#e5e7eb;--text:#111827;--sub:#6b7280;--accent:#2563eb;--accent-soft:rgba(37,99,235,0.12);--danger:#dc2626}
     body{font-family:system-ui,-apple-system,Segoe UI,Roboto,"PingFang SC","Microsoft YaHei",sans-serif;margin:20px;color:var(--text);background:#fafafa}
-    .grid{display:grid;grid-template-columns:minmax(320px,1.2fr) minmax(280px,.8fr);gap:16px;align-items:start}
+    .grid{display:grid;grid-template-columns:minmax(320px,1.2fr) minmax(320px,1fr);gap:16px;align-items:start}
     @media(max-width:960px){.grid{grid-template-columns:1fr}}
-    .card{border:1px solid var(--border);border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);background:white}
-    .card header{padding:10px 14px;border-bottom:1px solid var(--border);font-weight:600;display:flex;align-items:center;justify-content:space-between}
-    .card .body{padding:14px}
+    .card{border:1px solid var(--border);border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.06);background:white;overflow:hidden}
+    .card header{padding:12px 16px;border-bottom:1px solid var(--border);font-weight:600;display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:1.05rem}
+    .card .body{padding:16px}
+    .card.full{grid-column:1 / -1}
     .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
-    .tag{padding:4px 10px;border-radius:999px;background:var(--muted)}
-    .reply{font-size:1.05rem;line-height:1.6;margin-top:8px;min-height:1.6em}
-    small{color:var(--sub)}
+    .tag{padding:4px 10px;border-radius:999px;background:var(--muted);font-size:12px;color:var(--sub)}
+    .reply{font-size:1.05rem;line-height:1.6;margin-top:8px;min-height:1.6em;white-space:pre-wrap}
+    .status{font-size:12px;color:var(--sub);margin-top:6px;min-height:1.2em}
+    .status.risk{color:var(--danger);font-weight:600}
+    .risk-badge{color:var(--danger);font-weight:600;margin-top:4px;display:none}
     #video{width:100%;display:block;border-radius:10px;border:1px solid var(--border);background:#000}
-    #player{width:100%;margin-top:8px}
+    audio{width:100%;margin-top:8px}
     .muted{opacity:.7}
-    .status{font-size:12px;color:var(--sub);margin-top:4px;min-height:1.2em}
     .mode-list{display:flex;flex-direction:column;gap:10px}
     .mode-item{background:var(--muted);border-radius:10px;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start}
     .mode-item strong{font-size:1rem}
@@ -29,7 +31,30 @@
     button{border:none;border-radius:8px;padding:8px 16px;font:inherit;cursor:pointer;background:var(--accent);color:#fff;transition:background .2s}
     button.secondary{background:#6b7280}
     button:disabled{opacity:.6;cursor:not-allowed}
-    .risk{color:#dc2626;font-weight:600}
+    .clue-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+    .chip{padding:3px 10px;border-radius:999px;background:var(--muted);font-size:12px;color:var(--sub)}
+    .chip.accent{background:var(--accent-soft);color:var(--accent)}
+    .section-title{font-size:13px;color:var(--sub);font-weight:600}
+    .sources-list{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+    .source-item{border:1px solid var(--border);border-radius:10px;padding:10px 12px;background:#fff}
+    .source-item .title{font-weight:600}
+    .source-item .meta{font-size:12px;color:var(--sub);margin-top:4px}
+    .source-item .summary{font-size:13px;color:var(--text);line-height:1.5;margin-top:6px}
+    .empty-note{background:var(--muted);color:var(--sub);padding:10px 12px;border-radius:8px;font-size:13px}
+    .viseme-bars{display:flex;align-items:flex-end;gap:3px;min-height:52px;background:var(--muted);padding:6px 8px;border-radius:8px;margin-top:8px;overflow:hidden}
+    .viseme-bars span{flex:1;min-width:2px;border-radius:2px 2px 0 0;background:var(--accent);opacity:.75;transition:height .2s ease}
+    .viseme-bars.empty{justify-content:center;align-items:center;color:var(--sub);font-size:12px}
+    .timeline{display:flex;flex-direction:column;gap:12px;max-height:380px;overflow-y:auto}
+    .timeline-item{border:1px solid var(--border);border-left:4px solid var(--accent);border-radius:10px;padding:12px 14px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.04)}
+    .timeline-item.risk{border-left-color:var(--danger);box-shadow:0 2px 12px rgba(220,38,38,.15)}
+    .timeline-item .head{font-size:12px;color:var(--sub);display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+    .timeline-item .body{display:flex;flex-direction:column;gap:6px}
+    .timeline-item .role{display:flex;gap:8px;align-items:flex-start}
+    .timeline-item .role strong{font-size:13px;color:var(--sub);min-width:56px}
+    .timeline-item .role span{flex:1;line-height:1.5}
+    .timeline-item .meta{font-size:12px;color:var(--sub);margin-top:4px}
+    .timeline-empty{text-align:center;color:var(--sub);font-size:13px;padding:18px 0}
+    code{background:var(--muted);padding:2px 6px;border-radius:6px;font-size:12px}
   </style>
 </head>
 <body>
@@ -51,8 +76,33 @@
           <div><small>输出采样率：<span id="sr">-</span></small></div>
         </div>
         <div class="reply" id="reply">等待连接...</div>
-        <audio id="player" controls autoplay></audio>
+        <div class="status" id="dialogStatus"></div>
+        <div class="risk-badge" id="riskBadge"></div>
         <div class="status" id="netstat"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header>数字人面板</header>
+      <div class="body">
+        <div class="row">
+          <div>当前轮次：<strong id="turnId">-</strong></div>
+          <div class="tag">触发 <span id="triggerList">-</span></div>
+        </div>
+        <div class="status">策略：<strong id="strategyLabel">-</strong> · 语气 <span id="styleLabel">-</span></div>
+        <div class="status">Viseme FPS：<span id="visemeFps">-</span></div>
+        <div class="viseme-bars empty" id="visemeBars">等待音频...</div>
+        <audio id="player" controls autoplay></audio>
+      </div>
+    </div>
+
+    <div class="card">
+      <header>策略来源</header>
+      <div class="body">
+        <div class="section-title">检索线索</div>
+        <div class="clue-list" id="clueList"></div>
+        <div class="section-title" style="margin-top:12px;">命中片段</div>
+        <div class="sources-list" id="sourcesList"></div>
       </div>
     </div>
 
@@ -94,6 +144,15 @@
         <div class="status" id="textStatus"></div>
       </div>
     </div>
+
+    <div class="card full">
+      <header>对话时间轴</header>
+      <div class="body">
+        <div class="timeline" id="timelineList">
+          <div class="timeline-empty">暂无对话记录</div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script>
@@ -113,9 +172,42 @@
     const sendTextBtn = document.getElementById("sendText");
     const clearTextBtn = document.getElementById("clearText");
     const textStatus = document.getElementById("textStatus");
+    const turnIdEl = document.getElementById("turnId");
+    const triggerList = document.getElementById("triggerList");
+    const strategyLabel = document.getElementById("strategyLabel");
+    const styleLabel = document.getElementById("styleLabel");
+    const clueList = document.getElementById("clueList");
+    const sourcesList = document.getElementById("sourcesList");
+    const visemeFps = document.getElementById("visemeFps");
+    const visemeBars = document.getElementById("visemeBars");
+    const timelineList = document.getElementById("timelineList");
+    const dialogStatus = document.getElementById("dialogStatus");
+    const riskBadge = document.getElementById("riskBadge");
 
     let lastWav = null;
     let textDirty = false;
+
+    const triggerMap = {
+      warm_start: "首次启动",
+      safety_word: "安全词",
+      text_update: "文本更新",
+      emotion_shift: "情绪变化"
+    };
+
+    function localiseStrategy(strategy){
+      if(!strategy) return "-";
+      switch(strategy){
+        case "retrieval": return "检索策略";
+        case "fallback": return "规则模板";
+        case "emergency": return "应急守护";
+        default: return strategy;
+      }
+    }
+
+    function translateTriggers(triggers){
+      if(!Array.isArray(triggers) || !triggers.length) return [];
+      return triggers.map(t => triggerMap[t] || t);
+    }
 
     function setStatus(s){ netstat.textContent = s || ""; }
 
@@ -156,6 +248,138 @@
       fusionLabel.textContent = fusion.emo ? `当前融合：${fusion.emo} (${fmtConf(fusion.conf)})` : "";
     }
 
+    function renderClues(clues){
+      clueList.innerHTML = "";
+      if(!Array.isArray(clues) || !clues.length){
+        const span = document.createElement("div");
+        span.className = "empty-note";
+        span.textContent = "暂无检索线索";
+        clueList.appendChild(span);
+        return;
+      }
+      clues.slice(0,6).forEach((c,idx)=>{
+        const chip = document.createElement("span");
+        chip.className = idx === 0 ? "chip accent" : "chip";
+        chip.textContent = c;
+        clueList.appendChild(chip);
+      });
+    }
+
+    function renderSources(sources){
+      sourcesList.innerHTML = "";
+      if(!Array.isArray(sources) || !sources.length){
+        const div = document.createElement("div");
+        div.className = "empty-note";
+        div.textContent = "暂无命中条目，使用规则模板回复。";
+        sourcesList.appendChild(div);
+        return;
+      }
+      sources.slice(0,3).forEach(src=>{
+        const item = document.createElement("div");
+        item.className = "source-item";
+        const title = document.createElement("div");
+        title.className = "title";
+        title.textContent = src.title || "策略片段";
+        item.appendChild(title);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const score = Number(src.score ?? 0).toFixed(2);
+        const keywords = Array.isArray(src.keywords) && src.keywords.length ? src.keywords.join("、") : "无关键词";
+        const parts = [`score ${score}`, `关键词 ${keywords}`];
+        if(src.category) parts.push(String(src.category));
+        meta.textContent = parts.join(" · ");
+        item.appendChild(meta);
+        if(src.summary){
+          const summary = document.createElement("div");
+          summary.className = "summary";
+          summary.textContent = src.summary;
+          item.appendChild(summary);
+        }
+        sourcesList.appendChild(item);
+      });
+    }
+
+    function renderVisemes(viseme){
+      visemeBars.innerHTML = "";
+      visemeBars.classList.remove("empty");
+      if(!viseme || !Array.isArray(viseme.energy) || !viseme.energy.length){
+        visemeBars.classList.add("empty");
+        visemeBars.textContent = "等待音频...";
+        visemeFps.textContent = "-";
+        return;
+      }
+      visemeFps.textContent = viseme.fps ?? "-";
+      const energy = viseme.energy.slice(0,60);
+      energy.forEach(val=>{
+        const span = document.createElement("span");
+        const level = Math.max(0, Math.min(1, Number(val) || 0));
+        span.style.height = `${6 + level * 48}px`;
+        visemeBars.appendChild(span);
+      });
+    }
+
+    function formatTime(ts){
+      if(!ts) return "-";
+      const d = new Date(Number(ts) * 1000);
+      if(Number.isNaN(d.getTime())) return "-";
+      return d.toLocaleTimeString("zh-CN", {hour12:false,hour:"2-digit",minute:"2-digit",second:"2-digit"});
+    }
+
+    function renderTimeline(history){
+      timelineList.innerHTML = "";
+      if(!Array.isArray(history) || !history.length){
+        const empty = document.createElement("div");
+        empty.className = "timeline-empty";
+        empty.textContent = "暂无对话记录";
+        timelineList.appendChild(empty);
+        return;
+      }
+      history.forEach(turn=>{
+        const item = document.createElement("div");
+        item.className = "timeline-item";
+        if(turn?.assistant?.risk) item.classList.add("risk");
+        const head = document.createElement("div");
+        head.className = "head";
+        const left = document.createElement("span");
+        left.textContent = `#${turn?.turn ?? 0}`;
+        const right = document.createElement("span");
+        right.textContent = formatTime(turn?.ts);
+        head.appendChild(left);
+        head.appendChild(right);
+        item.appendChild(head);
+        const body = document.createElement("div");
+        body.className = "body";
+        const userRow = document.createElement("div");
+        userRow.className = "role";
+        const userLabel = document.createElement("strong");
+        userLabel.textContent = "来访者";
+        const userContent = document.createElement("span");
+        userContent.textContent = (turn?.user?.text || "(未提供文本)");
+        userRow.appendChild(userLabel);
+        userRow.appendChild(userContent);
+        body.appendChild(userRow);
+        const botRow = document.createElement("div");
+        botRow.className = "role";
+        const botLabel = document.createElement("strong");
+        botLabel.textContent = "数字人";
+        const botContent = document.createElement("span");
+        botContent.textContent = turn?.assistant?.text || "";
+        botRow.appendChild(botLabel);
+        botRow.appendChild(botContent);
+        body.appendChild(botRow);
+        const meta = document.createElement("div");
+        meta.className = "meta";
+        const triggers = Array.isArray(turn?.assistant?.triggers) ? translateTriggers(turn.assistant.triggers).join(" / ") : "-";
+        const emoLabel = turn?.user?.emo ? `情绪：${turn.user.emo}` : "情绪：-";
+        const strategyText = `策略：${localiseStrategy(turn?.assistant?.strategy)}`;
+        meta.textContent = `${emoLabel} · ${strategyText} · 触发：${triggers}`;
+        if(turn?.assistant?.risk) meta.textContent += " · ⚠️ 应急";
+        body.appendChild(meta);
+        item.appendChild(body);
+        timelineList.appendChild(item);
+      });
+    }
+
     ws.onopen = () => { reply.textContent = "已连接，正在读取摄像头…"; setStatus("WS 已连接"); };
 
     ws.onmessage = async (ev) => {
@@ -174,6 +398,29 @@
         if(!textDirty && typeof js.user_text === "string"){
           userText.value = js.user_text;
         }
+
+        const dialog = js.dialog || {};
+        const triggers = translateTriggers(dialog.triggers);
+        const triggerText = triggers.length ? triggers.join(" / ") : "-";
+        triggerList.textContent = triggerText;
+        const turnId = dialog.turn_id ?? js.turn_id ?? 0;
+        turnIdEl.textContent = turnId ? `#${turnId}` : "-";
+        strategyLabel.textContent = localiseStrategy(dialog.strategy);
+        styleLabel.textContent = dialog.style || "-";
+        dialogStatus.textContent = dialog.strategy ? `策略：${localiseStrategy(dialog.strategy)} · 触发：${triggerText}` : "";
+        dialogStatus.classList.toggle("risk", Boolean(dialog.risk));
+        if(dialog.risk){
+          riskBadge.textContent = "⚠️ 应急策略已触发";
+          riskBadge.style.display = "block";
+        }else{
+          riskBadge.textContent = "";
+          riskBadge.style.display = "none";
+        }
+        renderClues(dialog.clues);
+        renderSources(dialog.sources);
+        renderTimeline(dialog.history);
+
+        renderVisemes(js.visemes);
 
         if(js.wav && js.wav !== lastWav){
           lastWav = js.wav;

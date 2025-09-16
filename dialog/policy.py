@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 from typing import Optional
 
+EMERGENCY_REPLY = (
+    "我在，先保证你的安全。如果你有伤害自己的想法，请立即联系当地的紧急援助或可信任的人。"
+    "如果愿意，我们可以一起寻找能够帮助你的资源。你不是一个人。"
+)
+
 EMO_STYLES = {
     "happy": "轻快、鼓励",
     "neutral": "平静、中性",
@@ -39,12 +44,21 @@ def is_risky(text: Optional[str]) -> bool:
         return False
     return any(k in t for k in RISK_WORDS)
 
-def make_reply(user_text: Optional[str], emo_label: str) -> str:
-    """基于情绪标签与规则生成可用回复"""
-    if is_risky(user_text):
-        return ("我在，先保证你的安全。如果你有伤害自己的想法，请立即联系当地的紧急援助或可信任的人。"
-                "如果愿意，我们可以一起寻找能够帮助你的资源。你不是一个人。")
+def emergency_reply() -> str:
+    """通用的应急响应模板。"""
+    return EMERGENCY_REPLY
+
+
+def make_reply(user_text: Optional[str], emo_label: str, allow_emergency: bool = True) -> str:
+    """基于情绪标签与规则生成可用回复。"""
+    if allow_emergency and is_risky(user_text):
+        return emergency_reply()
 
     style = EMO_STYLES.get(emo_label, "平静、中性")
     base = BASE_REPLY.get(emo_label, BASE_REPLY["neutral"])
     return f"[{style}] {base}"
+
+
+def describe_style(emo_label: str) -> str:
+    """返回与情绪对应的语气描述。"""
+    return EMO_STYLES.get(emo_label, "平静、中性")
